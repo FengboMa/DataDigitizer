@@ -3,3 +3,6 @@ opencv-python
 pillow
 pandas
 scipy
+streamlit
+streamlit-drawable-canvas
+plotly
