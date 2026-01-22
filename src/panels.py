@@ -253,48 +253,44 @@ class MovableStatisticsPanel:
             self.stats_text.config(state=tk.DISABLED)
             return
             
-        stats_str = "--- Line Masking Results ---
-"
+        stats_str = "--- Line Masking Results ---\\n"
         if hasattr(self.parent, 'line_masking') and self.parent.line_masking.detected_lines:
-            stats_str += f"Lines Detected: {len(self.parent.line_masking.detected_lines)}\n"
-            stats_str += f"Current Line: {self.parent.line_masking.current_line_index + 1}\n\n"
+            stats_str += f"Lines Detected: {len(self.parent.line_masking.detected_lines)}\\n"
+            stats_str += f"Current Line: {self.parent.line_masking.current_line_index + 1}\\n\\n"
         
-        stats_str += "--- Method Results ---
-"
-        stats_str += f"Method 1: {len(self.parent.method1_points)} points\n"
-        stats_str += f"Method 2: {len(self.parent.method2_points)} points\n"
-        stats_str += f"Current: {self.parent.method_var.get()}\n\n"
+        stats_str += "--- Method Results ---\\n"
+        stats_str += f"Method 1: {len(self.parent.method1_points)} points\\n"
+        stats_str += f"Method 2: {len(self.parent.method2_points)} points\\n"
+        stats_str += f"Current: {self.parent.method_var.get()}\\n\\n"
         
-        stats_str += "--- General ---
-"
-        stats_str += f"{'.':<15} {self.parent.statistics['Points']}\n"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('Correlation', 0):.4f}\n"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('Area (Trapezoid)', 0):.4f}\n\n"
+        stats_str += "--- General ---\\n"
+        stats_str += f"{'Points Found:':<15} {self.parent.statistics['Points']}\\n"
+        stats_str += f"{'Correlation:':<15} {self.parent.statistics.get('Correlation', 0):.4f}\\n"
+        stats_str += f"{'Area Under Curve:':<15} {self.parent.statistics.get('Area (Trapezoid)', 0):.4f}\\n\\n"
         
         if 'Peak' in self.parent.statistics:
-            stats_str += "--- Extrema ---
-"
+            stats_str += "--- Extrema ---\\n"
             peak = self.parent.statistics['Peak']
             valley = self.parent.statistics['Valley']
-            stats_str += f"{'.':<15} ({peak[0]:.2f}, {peak[1]:.2f})\n"
-            stats_str += f"{'.':<15} ({valley[0]:.2f}, {valley[1]:.2f})\n\n"
+            stats_str += f"{'Peak (x, y):':<15} ({peak[0]:.2f}, {peak[1]:.2f})\\n"
+            stats_str += f"{'Valley (x, y):':<15} ({valley[0]:.2f}, {valley[1]:.2f})\\n\\n"
             
-        stats_str += "--- X-Axis Stats ---
-"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('X Mean', 0):.4f}\n"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('X Std Dev', 0):.4f}\n"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('X Skew', 0):.4f}\n"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('X Kurtosis', 0):.4f}\n\n"
+        stats_str += "--- X-Axis Stats ---\\n"
+        stats_str += f"{'Mean:':<15} {self.parent.statistics.get('X Mean', 0):.4f}\\n"
+        stats_str += f"{'Std Dev:':<15} {self.parent.statistics.get('X Std Dev', 0):.4f}\\n"
+        stats_str += f"{'Skewness:':<15} {self.parent.statistics.get('X Skew', 0):.4f}\\n"
+        stats_str += f"{'Kurtosis:':<15} {self.parent.statistics.get('X Kurtosis', 0):.4f}\\n\\n"
         
-        stats_str += "--- Y-Axis Stats ---
-"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('Y Mean', 0):.4f}\n"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('Y Std Dev', 0):.4f}\n"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('Y Skew', 0):.4f}\n"
-        stats_str += f"{'.':<15} {self.parent.statistics.get('Y Kurtosis', 0):.4f}\n\n"
+        stats_str += "--- Y-Axis Stats ---\\n"
+        stats_str += f"{'Mean:':<15} {self.parent.statistics.get('Y Mean', 0):.4f}\\n"
+        stats_str += f"{'Std Dev:':<15} {self.parent.statistics.get('Y Std Dev', 0):.4f}\\n"
+        stats_str += f"{'Skewness:':<15} {self.parent.statistics.get('Y Skew', 0):.4f}\\n"
+        stats_str += f"{'Kurtosis:':<15} {self.parent.statistics.get('Y Kurtosis', 0):.4f}\\n\\n"
         
         if self.parent.best_fit_equation:
-            stats_str += "--- Best Fit Line ---
-"
-            stats_str += f"{'.':<15} {self.parent.best_fit_equation}\n"
-            stats_str += f"{'.':<15} {self.parent.statistics.get('r_squared', 0):.6f}
+            stats_str += "--- Best Fit Line ---\\n"
+            stats_str += f"{'Equation:':<15} {self.parent.best_fit_equation}\\n"
+            stats_str += f"{'R-squared:':<15} {self.parent.statistics.get('r_squared', 0):.6f}\\n"
+            
+        self.stats_text.insert(1.0, stats_str)
+        self.stats_text.config(state=tk.DISABLED)

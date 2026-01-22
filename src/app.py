@@ -1207,6 +1207,60 @@ class RamanDataDigitizer:
         except Exception as e:
             messagebox.showerror("Border Exclusion Error", f"Failed to detect borders: {e}")
 
+    def auto_create_text_exclusions(self):
+        """
+        Main function to automatically create exclusion zones for text and numbers.
+        """
+        if self.original_image is None:
+            messagebox.showwarning("No Image", "Please load an image first.")
+            return
+        
+        try:
+            # Detect text regions using our comprehensive multi-method approach
+            text_regions = self.detect_text_regions()
+            
+            if not text_regions:
+                messagebox.showinfo("Auto-Exclusion", "No text regions detected.")
+                return
+            
+            # Add detected regions to existing exclusion zones
+            self.exclusion_zones.extend(text_regions)
+            
+            # Redraw to show the new exclusion zones
+            self.draw_exclusion_zones()
+            
+            messagebox.showinfo("Auto-Exclusion Complete", 
+                              f"Added {len(text_regions)} automatic text exclusion zones.\\n" +
+                              f"Total exclusion zones: {len(self.exclusion_zones)}")
+            
+        except Exception as e:
+            messagebox.showerror("Auto-Exclusion Error", f"Failed to create automatic exclusions: {e}")
+
+    def enter_zone_deletion_mode(self):
+        """
+        Enter interactive mode where clicking on an exclusion zone removes it.
+        """
+        if not self.exclusion_zones:
+            messagebox.showinfo("No Zones", "No exclusion zones to delete.")
+            return
+        
+        self.current_mode = "delete_zone"
+        self.canvas.config(cursor="pirate")  # Visual indicator for deletion mode
+        messagebox.showinfo("Zone Deletion Mode", 
+                           "Click on any exclusion zone to remove it.\\n" +
+                           "Press Escape when finished.")
+
+    def find_zone_at_position(self, x, y):
+        """
+        Find which exclusion zone (if any) contains the given coordinates.
+        Returns the index of the zone, or None if no zone contains the point.
+        """
+        # x, y are original coordinates
+        for i, (x0, y0, x1, y1) in enumerate(self.exclusion_zones):
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                return i
+        return None
+
     # --- Method Selection ---
     def on_method_changed(self, event=None):
         """Handle method dropdown changes."""
