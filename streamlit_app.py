@@ -38,6 +38,17 @@ if not uploaded_file:
 image = Image.open(uploaded_file).convert("RGB")
 img_array = np.array(image)
 
+import io
+import base64
+
+def pil_to_base64(img):
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/png;base64,{img_str}"
+
+bg_image_url = pil_to_base64(image)
+
 # --- Main Layout ---
 tab1, tab2, tab3 = st.tabs(["🛑 Exclusions & Calibration", "🎯 Results", "📥 Export"])
 
@@ -61,7 +72,7 @@ with tab1:
         fill_color="rgba(255, 0, 0, 0.3)",
         stroke_width=2,
         stroke_color="#ff0000",
-        background_image=image,
+        background_image=bg_image_url,
         update_streamlit=True,
         height=canvas_height,
         width=canvas_width,
