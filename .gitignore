@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Python cache/build
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtualenvs
+.venv/
+venv/
+
+# Local debug artifacts
+debug_*.log

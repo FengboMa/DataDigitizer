@@ -9,6 +9,7 @@ from scipy import ndimage
 import json
 import math
 import threading
+from src import core
 from src.masking import LineMaskingSystem
 from src.panels import MovableStatisticsPanel
 
@@ -1384,15 +1385,10 @@ class RamanDataDigitizer:
     def auto_calibrate(self):
         if self.original_image is None: messagebox.showwarning("Warning", "Please load an image first."); return
         try:
-            gray = cv2.cvtColor(self.image_array, cv2.COLOR_RGB2GRAY)
-            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
-            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if not contours: raise ValueError("No contours found.")
-            largest_contour = max(contours, key=cv2.contourArea)
-            rect = cv2.minAreaRect(largest_contour); box = cv2.boxPoints(rect); box = box.astype(int) 
-            points = sorted(box, key=lambda p: p[1])
-            top_points = sorted(points[:2], key=lambda p: p[0]); bottom_points = sorted(points[2:], key=lambda p: p[0])
-            self.calibration_points = [tuple(top_points[0]), tuple(top_points[1]), tuple(bottom_points[1]), tuple(bottom_points[0])]
+            auto_points = core.auto_calibrate_image(self.image_array)
+            if not auto_points:
+                raise ValueError("No contours found.")
+            self.calibration_points = [tuple(p) for p in auto_points]
             messagebox.showinfo("Auto-Calibration", "Found graph area. You can now drag the sides to fine-tune.")
             self.redraw_overlays(); self.escape_mode()
         except Exception as e:
@@ -1486,43 +1482,23 @@ class RamanDataDigitizer:
         """Original method with color masking and weighted averaging."""
         try:
             self.color_tolerance = int(self.tolerance_var.get())
-            
-            # Use original image array for detection
+
             if self.line_masking.detected_lines:
                 mask = self.line_masking.get_current_line_mask()
-                if mask is not None:
-                    # Line mask is already 255/0, matches original image size
-                    gray_image = cv2.cvtColor(self.image_array, cv2.COLOR_RGB2GRAY)
-                else:
-                    mask = self.enhance_line_detection(self.image_array, self.selected_color, self.color_tolerance)
-                    gray_image = cv2.cvtColor(self.image_array, cv2.COLOR_RGB2GRAY)
             else:
-                mask = self.enhance_line_detection(self.image_array, self.selected_color, self.color_tolerance)
-                gray_image = cv2.cvtColor(self.image_array, cv2.COLOR_RGB2GRAY)
+                mask = None
 
-            calib_x = [p[0] for p in self.calibration_points]; calib_y = [p[1] for p in self.calibration_points]
-            min_x, max_x, min_y, max_y = min(calib_x), max(calib_x), min(calib_y), max(calib_y)
-            
-            all_points = []
-            for x in range(min_x, max_x):
-                y_indices = np.where(mask[min_y:max_y, x] > 0)[0]
-                
-                if y_indices.size > 0:
-                    y_coords_in_col = y_indices + min_y
-                    
-                    grayscale_values = gray_image[y_coords_in_col, x]
-                    weights = 255.0 - grayscale_values.astype(np.float32)
-                    
-                    if np.sum(weights) > 0:
-                        y_center = np.sum(y_coords_in_col * weights) / np.sum(weights)
-                        if not self.is_in_exclusion_zone(x, int(y_center)):
-                            all_points.append((x, int(y_center)))
-                    else: 
-                        y_center = np.mean(y_coords_in_col)
-                        if not self.is_in_exclusion_zone(x, int(y_center)):
-                            all_points.append((x, int(y_center)))
+            if mask is None:
+                mask = core.enhance_line_detection(self.image_array, self.selected_color, self.color_tolerance)
 
-            if not all_points: 
+            all_points = core.extract_points_method1(
+                self.image_array,
+                mask,
+                self.calibration_points,
+                exclusion_zones=self.exclusion_zones,
+            )
+
+            if not all_points:
                 return []
             
             # Adaptive Interpolation
@@ -1554,37 +1530,7 @@ class RamanDataDigitizer:
     # --- METHOD 2: Advanced Detection ---
     def find_line_y_in_column(self, column_data, last_y=None, max_thickness=15):
         """Find the most probable Y-coordinate of the line in a given column."""
-        y_coords_detected = np.where(column_data > 0)[0]
-        if y_coords_detected.size == 0: return None
-
-        diffs = np.diff(y_coords_detected)
-        segments = np.split(y_coords_detected, np.where(diffs > 1.5)[0] + 1)
-        
-        if not segments or segments[0].size == 0: return None
-            
-        valid_segments = []
-        for s in segments:
-            if s.size > 0 and s.size <= max_thickness:
-                valid_segments.append(s)
-
-        if not valid_segments: return None
-
-        segment_centers = [int(np.mean(s)) for s in valid_segments]
-        
-        if last_y is None:
-            return segment_centers[0]
-
-        closest_y = -1
-        min_dist = float('inf')
-        for y_center in segment_centers:
-            dist = abs(y_center - last_y)
-            if dist < min_dist:
-                min_dist = dist
-                closest_y = y_center
-        
-        if min_dist > 50: return None 
-
-        return closest_y
+        return core.find_line_y_in_column(column_data, last_y, max_thickness)
 
     def extract_data_method2(self):
         """Advanced method with thickness filtering and line masking support."""
@@ -1593,88 +1539,26 @@ class RamanDataDigitizer:
                 final_mask = self.line_masking.get_current_line_mask()
                 if final_mask is None: return []
             else:
-                q_color = self.selected_color
-                bgr_color = np.array([q_color[2], q_color[1], q_color[0]])
-                tolerance = int(self.tolerance_var.get())
-                lower_bound = np.clip(bgr_color - tolerance, 0, 255)
-                upper_bound = np.clip(bgr_color + tolerance, 0, 255)
-                
-                bgr_image = cv2.cvtColor(self.image_array, cv2.COLOR_RGB2BGR)
-                color_mask = cv2.inRange(bgr_image, lower_bound, upper_bound)
-
-                plot_mask = np.zeros_like(color_mask)
-                calib_pts_int = np.array(self.calibration_points, dtype=np.int32)
-                cv2.fillPoly(plot_mask, [calib_pts_int], 255)
-
-                kernel = np.ones((3,3), np.uint8)
-                eroded_plot_mask = cv2.erode(plot_mask, kernel, iterations=2)
-
-                final_mask = cv2.bitwise_and(color_mask, eroded_plot_mask)
-
-            min_x = min(p[0] for p in self.calibration_points)
-            max_x = max(p[0] for p in self.calibration_points)
-            min_y = min(p[1] for p in self.calibration_points)
-            max_y = max(p[1] for p in self.calibration_points)
+                final_mask = core.build_method2_mask(
+                    self.image_array,
+                    self.selected_color,
+                    int(self.tolerance_var.get()),
+                    self.calibration_points,
+                )
 
             mode = self.mode_var.get()
             try:
                 value = float(self.value_var.get())
             except ValueError: value = 10
 
-            x_values_to_sample = []
-            if mode == "Number of points":
-                num_points = int(value)
-                if num_points < 2: num_points = 2
-                x_values_to_sample = np.linspace(min_x, max_x, num_points, dtype=int)
-            else:
-                step = int(value)
-                if step <= 0: step = 1
-                x_values_to_sample = range(min_x, max_x + 1, step)
-
-            pixel_points = []
-            last_found_y = None 
-            img_width = self.image_array.shape[1]
-
-            for x in x_values_to_sample:
-                if 0 <= x < img_width:
-                    col_data = final_mask[:, x]
-                    y = self.find_line_y_in_column(col_data, last_found_y)
-                    if y is not None and not self.is_in_exclusion_zone(x, y):
-                        pixel_points.append((x, y))
-                        last_found_y = y
-
-            # Add Highest and Lowest Points
-            max_intensity_y_pixel = -1; min_intensity_y_pixel = -1
-            max_intensity_x_pixel = -1; min_intensity_x_pixel = -1
-
-            found_max = False
-            for y_scan in range(min_y, max_y + 1):
-                for x_scan in range(min_x, max_x + 1):
-                    if final_mask[y_scan, x_scan] > 0:
-                        max_intensity_y_pixel = y_scan; max_intensity_x_pixel = x_scan
-                        found_max = True; break
-                if found_max: break
-
-            found_min = False
-            for y_scan in range(max_y, min_y - 1, -1):
-                for x_scan in range(min_x, max_x + 1):
-                    if final_mask[y_scan, x_scan] > 0:
-                        min_intensity_y_pixel = y_scan; min_intensity_x_pixel = x_scan
-                        found_min = True; break
-                if found_min: break
-
-            if max_intensity_x_pixel != -1 and max_intensity_y_pixel != -1:
-                highest_point = (max_intensity_x_pixel, max_intensity_y_pixel)
-                if not any(abs(p[0] - highest_point[0]) < 5 and abs(p[1] - highest_point[1]) < 5 for p in pixel_points):
-                    pixel_points.append(highest_point)
-
-            if min_intensity_x_pixel != -1 and min_intensity_y_pixel != -1:
-                lowest_point = (min_intensity_x_pixel, min_intensity_y_pixel)
-                if not any(abs(p[0] - lowest_point[0]) < 5 and abs(p[1] - lowest_point[1]) < 5 for p in pixel_points):
-                    pixel_points.append(lowest_point)
-
-            pixel_points.sort(key=lambda p: p[0])
-            return pixel_points
+            mode_key = "count" if mode == "Number of points" else "step"
+            return core.extract_points_method2(
+                final_mask,
+                self.calibration_points,
+                exclusion_zones=self.exclusion_zones,
+                mode=mode_key,
+                value=value,
+            )
 
         except Exception as e:
             print(f"Method 2 failed: {e}")
@@ -1727,13 +1611,7 @@ class RamanDataDigitizer:
 
     def enhance_line_detection(self, image_array, target_color, tolerance):
         """Enhanced line detection used by Method 1."""
-        img_float = image_array.astype(np.float32)
-        target_color_float = np.array(target_color, dtype=np.float32)
-        dist_sq = np.sum((img_float - target_color_float) ** 2, axis=-1)
-        mask = (dist_sq <= tolerance ** 2).astype(np.uint8) * 255
-        kernel = np.ones((3,3), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-        return cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        return core.enhance_line_detection(image_array, target_color, tolerance)
 
     def clear_data(self):
         self.extracted_points, self.real_coordinates, self.statistics, self.best_fit_equation = [], [], {}, ""
@@ -1783,23 +1661,18 @@ class RamanDataDigitizer:
         if len(self.calibration_points) != 4 or not self.extracted_points: return
         x_min, x_max = float(self.x_min_var.get()), float(self.x_max_var.get())
         y_min, y_max = float(self.y_min_var.get()), float(self.y_max_var.get())
-        src = np.array(self.calibration_points, dtype='float32')
-        dst = np.array([[x_min, y_max], [x_max, y_max], [x_max, y_min], [x_min, y_min]], dtype='float32')
-        matrix = cv2.getPerspectiveTransform(src, dst)
-        self.real_coordinates = cv2.perspectiveTransform(np.array([self.extracted_points], dtype='float32'), matrix)[0].tolist()
+        self.real_coordinates = core.convert_to_real_coordinates(
+            self.extracted_points,
+            self.calibration_points,
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+        )
 
     def calculate_statistics(self):
         if not self.real_coordinates: return
-        x_vals, y_vals = [p[0] for p in self.real_coordinates], [p[1] for p in self.real_coordinates]
-        self.statistics = {
-            'Points': len(self.real_coordinates),
-            'X Mean': np.mean(x_vals), 'X Std Dev': np.std(x_vals),
-            'X Skew': stats.skew(x_vals), 'X Kurtosis': stats.kurtosis(x_vals),
-            'Y Mean': np.mean(y_vals), 'Y Std Dev': np.std(y_vals),
-            'Y Skew': stats.skew(y_vals), 'Y Kurtosis': stats.kurtosis(y_vals),
-            'Correlation': np.corrcoef(x_vals, y_vals)[0, 1] if len(x_vals) > 1 else 0,
-            'Area (Trapezoid)': np.trapz(y_vals, x_vals) if len(x_vals) > 1 else 0
-        }
+        self.statistics = core.calculate_stats_extended(self.real_coordinates)
         self.update_statistics_display()
 
     def calculate_best_fit(self):
